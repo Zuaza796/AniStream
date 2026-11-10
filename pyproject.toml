@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anistream-linux"
+version = "0.1.0"
+description = "Reproductor de anime para Linux con GTK 4 y libmpv"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Zuaza796"}]
+dependencies = ["beautifulsoup4>=4.12,<5"]
+
+[project.urls]
+Repository = "https://github.com/Zuaza796/AniStream"
+Issues = "https://github.com/Zuaza796/AniStream/issues"
+
+[project.scripts]
+anistream = "anistream.app:main"
+
+[tool.setuptools.packages.find]
+include = ["anistream*"]
+
+[tool.setuptools.package-data]
+anistream = ["resources/*.css"]
+
+[tool.setuptools.data-files]
+"share/doc/anistream" = ["THIRD_PARTY_NOTICES.md"]
+"share/doc/anistream/third_party/anicli-esp" = ["third_party/anicli-esp/LICENSE"]

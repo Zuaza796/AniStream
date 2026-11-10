@@ -1,0 +1,27 @@
+window { background: #0d1019; color: #edf0fa; }
+headerbar { background: #121725; border: none; }
+.brand { font-size: 23px; font-weight: 900; color: #a99aff; }
+.hero { font-size: 38px; font-weight: 900; }
+.subtitle { color: #a6aec5; font-size: 15px; }
+button { background: #20273a; color: #edf0fa; border-radius: 10px; padding: 10px 16px; border: none; }
+button:hover { background: #343d58; }
+.accent { background: #7960e8; font-weight: bold; }
+.card { background: #161c2b; padding: 8px; border-radius: 14px; }
+.card:hover { background: #252e45; }
+.card label { font-weight: bold; }
+entry { background: #1b2234; color: white; border-radius: 12px; padding: 12px; }
+flowboxchild { padding: 7px; }
+.status { color: #b5a6ff; padding: 8px; }
+.video-surface { background: black; }
+.video-top { background: linear-gradient(to bottom, rgba(0,0,0,0.88), transparent); padding: 18px 20px 40px; }
+.video-bottom { background: linear-gradient(to top, rgba(0,0,0,0.94), rgba(0,0,0,0.55), transparent); padding: 30px 20px 14px; }
+.video-controls button { background: transparent; padding: 10px; border-radius: 50%; min-width: 24px; min-height: 24px; color: white; }
+.video-controls button:hover { background: rgba(255,255,255,0.18); }
+.video-controls button:focus-visible { outline: 2px solid #b8a5ff; }
+.video-controls button:disabled { opacity: 0.35; }
+.video-controls .accent { background: #7960e8; }
+.video-controls .status { color: #ddd5ff; padding: 0; }
+.video-controls label { color: white; }
+.video-controls scale trough { background: rgba(255,255,255,0.25); }
+.video-controls scale highlight { background: #a58bff; }
+.video-controls scale slider { background: white; }

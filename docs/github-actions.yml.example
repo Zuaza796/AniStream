@@ -1,0 +1,21 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-gi gir1.2-gtk-4.0 python3-bs4 libmpv2 libegl1 libgl1 desktop-file-utils
+      - name: Check dependencies and shell syntax
+        run: |
+          ./install.sh --check
+          bash -n install.sh
+      - name: Offline tests, including isolated installation
+        run: /usr/bin/python3 -m unittest discover -s tests -v
+      - name: Check whitespace
+        run: git diff --check
