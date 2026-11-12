@@ -42,3 +42,14 @@ Un cambio de controles debe comprobar también: ocultación por inactividad, ret
 - Mantén las atribuciones del código adaptado de anicli-esp.
 
 El repositorio remoto es `https://github.com/Zuaza796/AniStream.git`. El historial de uso pertenece al directorio XDG del usuario y no forma parte de Git.
+
+## Prueba de Picture-in-Picture
+
+La prueba utiliza un vídeo local, sin depender de servidores externos ni modificar la biblioteca personal. Con ffmpeg disponible:
+
+```bash
+ffmpeg -f lavfi -i testsrc2=size=640x360:rate=24 -t 60 -c:v mpeg4 -q:v 8 -an /tmp/anistream-pip.mp4
+python3 tests/smoke_pip.py /tmp/anistream-pip.mp4
+```
+
+Comprueba cambios repetidos de ventana, mismo núcleo mpv, posición y pausa conservadas, cierre de PiP y navegación del catálogo. En Hyprland verifica también flotación y fijación. Es una prueba gráfica opcional; las pruebas unitarias de `test_pip.py` no requieren pantalla ni cambios reales en el compositor.

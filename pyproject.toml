@@ -23,7 +23,7 @@ anistream = "anistream.app:main"
 include = ["anistream*"]
 
 [tool.setuptools.package-data]
-anistream = ["resources/*.css"]
+anistream = ["resources/*.css", "resources/*.svg"]
 
 [tool.setuptools.data-files]
 "share/doc/anistream" = ["THIRD_PARTY_NOTICES.md"]

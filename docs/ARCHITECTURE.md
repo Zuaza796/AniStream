@@ -95,3 +95,11 @@ No hay bloqueo entre varios procesos que escriban sobre la misma biblioteca; las
 Se usa Python + GTK para aprovechar bibliotecas disponibles en Linux y libmpv para mantener reproducción integrada. Se elige JSON por el tamaño reducido del estado local. El instalador usa paquetes nativos para evitar compilar PyGObject con pip.
 
 El proveedor depende de HTML y formatos de terceros que pueden cambiar. No hay soporte offline, descarga de capítulos, cuentas, sincronización ni selección explícita de idioma. La detección de distro cubre familias concretas, no todas las distribuciones Linux. Las pruebas automáticas sin red no sustituyen una prueba gráfica y de reproducción real.
+
+## Picture-in-Picture
+
+La vista del reproductor se mueve entre la ventana principal y una `Gtk.ApplicationWindow` secundaria. La barra compacta conserva pausa, silencio, progreso, tiempo y el botón de retorno. La ventana principal muestra un acceso para recuperar el vídeo o explorar el catálogo. Cerrar la ventana flotante restaura el reproductor; cerrar la principal termina ambos.
+
+GTK recrea el contexto OpenGL al cambiar de ventana. Durante esa transferencia `player.py` mantiene vivo el mismo núcleo libmpv, libera solo el contexto de renderizado y conserva URL en memoria, posición, pausa, silencio y volumen. Al realizar el área en su nueva ventana crea otro contexto y recarga la fuente desde la posición guardada. Puede haber una breve recarga, especialmente en streaming; no se crea un segundo reproductor ni se duplica el audio.
+
+`pip_window.py` configura únicamente la ventana del propio PID y título PiP. En Hyprland aplica flotación, tamaño 480×300, ubicación inferior derecha, fijación entre espacios y elevación; admite dispatchers clásicos y Lua. No modifica archivos de configuración ni reglas persistentes. Para otros gestores se utiliza la relación transitoria de GTK: mantenerse sobre aplicaciones ajenas depende del compositor.

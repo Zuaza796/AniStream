@@ -35,6 +35,10 @@ class Video(Gtk.GLArea):
         self.context = P(); self.handle = None; self.pending = None
         self.closed = False; self.redraw_pending = False
         self.initialization_error = None
+        self.reparenting = False
+        self.resume_after_reparent = None
+        self.last_media = None
+        self.playing_media = False
         self.values = {'time-pos': 0., 'duration': 0., 'pause': False}
         self.lib = C.CDLL('libmpv.so.2')
         self.create = api(self.lib, 'mpv_create', P, [])
@@ -80,31 +84,44 @@ class Video(Gtk.GLArea):
             self.initialization_error = 'No se pudo iniciar OpenGL: ' + str(self.get_error())
             self.failed(self.initialization_error); return
         try:
-            # GTK applies the desktop locale during startup. libmpv refuses
-            # non-C LC_NUMERIC, including es_MX even with a dot decimal separator.
-            # Reset only numeric formatting, keeping the interface language.
-            locale.setlocale(locale.LC_NUMERIC, 'C')
-            self.handle = self.create()
-            if not self.handle: raise RuntimeError('No se pudo iniciar libmpv')
-            for key, value in {'vo':'libmpv', 'terminal':'no', 'config':'no', 'idle':'yes', 'keep-open':'yes', 'hwdec':'no', 'network-timeout':'12', 'ytdl':'no', 'user-agent':'Mozilla/5.0', 'log-file':str(DATA / 'mpv-embedded.log'), 'http-header-fields':'Referer: https://www.mp4upload.com/', 'input-default-bindings':'no', 'osc':'no'}.items():
-                self.check(self.option(self.handle, key.encode(), value.encode()))
-            self.check(self.initialize(self.handle))
-            version = self.property_string(self.handle, b'mpv-version')
-            if version:
-                try:
-                    match = re.search(r'(\d+)\.(\d+)', C.string_at(version).decode())
-                    if match: self.modern_loadfile = tuple(map(int, match.groups())) >= (0, 38)
-                finally: self.free(version)
+            if not self.handle:
+                # GTK applies the desktop locale during startup. libmpv refuses
+                # non-C LC_NUMERIC, including es_MX even with a dot decimal separator.
+                # Reset only numeric formatting, keeping the interface language.
+                locale.setlocale(locale.LC_NUMERIC, 'C')
+                self.handle = self.create()
+                if not self.handle: raise RuntimeError('No se pudo iniciar libmpv')
+                for key, value in {'vo':'libmpv', 'terminal':'no', 'config':'no', 'idle':'yes', 'keep-open':'yes', 'hwdec':'no', 'network-timeout':'12', 'ytdl':'no', 'user-agent':'Mozilla/5.0', 'log-file':str(DATA / 'mpv-embedded.log'), 'http-header-fields':'Referer: https://www.mp4upload.com/', 'input-default-bindings':'no', 'osc':'no'}.items():
+                    self.check(self.option(self.handle, key.encode(), value.encode()))
+                self.check(self.initialize(self.handle))
+                version = self.property_string(self.handle, b'mpv-version')
+                if version:
+                    try:
+                        match = re.search(r'(\d+)\.(\d+)', C.string_at(version).decode())
+                        if match: self.modern_loadfile = tuple(map(int, match.groups())) >= (0, 38)
+                    finally: self.free(version)
             init = Init(self.resolve_cb, None)
             params = (Param * 3)(Param(1, C.cast(C.c_char_p(b'opengl'), P)), Param(2, C.cast(C.pointer(init), P)), Param())
             self.check(self.render_create(C.byref(self.context), self.handle, params))
             self.set_update(self.context, self.update_cb, None)
             for name, fmt in [('time-pos',5), ('duration',5), ('pause',3), ('paused-for-cache',3), ('mute',3), ('volume',5)]:
                 self.check(self.observe(self.handle, 0, name.encode(), fmt))
-            if self.pending:
-                args = self.pending; self.pending = None; self.load(*args)
+            if self.resume_after_reparent:
+                media, values = self.resume_after_reparent
+                self.resume_after_reparent = None
+                # Discard teardown events before starting on the new GL context.
+                while self.wait(self.handle, 0).contents.id: pass
+                self.load(media[0], values.get('time-pos', 0), media[1])
+                self.command('set', 'pause', 'yes' if values.get('pause') else 'no')
+                self.command('set', 'mute', 'yes' if values.get('mute') else 'no')
+                self.command('set', 'volume', str(values.get('volume', 100)))
+            else:
+                self.reparenting = False
+                if self.pending:
+                    args = self.pending; self.pending = None; self.load(*args)
         except Exception as e:
             logging.exception('Player initialization failed')
+            self.reparenting = False
             self.initialization_error = 'No se pudo iniciar el reproductor: ' + str(e)
             self.failed(self.initialization_error)
 
@@ -140,6 +157,9 @@ class Video(Gtk.GLArea):
         if self.initialization_error: raise RuntimeError(self.initialization_error)
         if not self.context:
             self.pending = (url, position, referer); return
+        self.last_media = (url, referer)
+        self.load_position = max(0, position)
+        self.playing_media = True
         self.values.update({'time-pos': 0., 'duration': 0.})
         self.command('set', 'http-header-fields', 'Referer: ' + referer)
         options = f'start={max(0,position):.2f}'
@@ -148,6 +168,8 @@ class Video(Gtk.GLArea):
         self.command('set', 'pause', 'no')
 
     def stop(self):
+        self.playing_media = False
+        self.resume_after_reparent = None
         self.pending = None
         self.command('stop')
 
@@ -162,26 +184,41 @@ class Video(Gtk.GLArea):
                 if prop.data and prop.format in (3,5):
                     value = C.cast(prop.data, C.POINTER(C.c_double if prop.format==5 else C.c_int)).contents.value
                     self.values[prop.name.decode()] = value
+            elif event.id == 8:
+                self.reparenting = False
             elif event.id == 7 and event.data:
                 end = C.cast(event.data, C.POINTER(EndFile)).contents
-                if end.error < 0:
+                if end.error < 0 and not self.reparenting:
                     logging.error('libmpv end-file error=%s', self.error_string(end.error).decode())
                     self.failed('No se pudo reproducir: ' + self.error_string(end.error).decode())
-            elif event.error < 0:
+            elif event.error < 0 and not self.reparenting:
                 self.failed('Reproductor: ' + self.error_string(event.error).decode())
         self.changed(self.values)
         return True
 
+    def prepare_reparent(self):
+        """Retain the mpv core while GTK recreates the GL area in another window."""
+        self.reparenting = True
+        if self.playing_media and self.last_media:
+            values = dict(self.values)
+            if not values.get('duration'):
+                values['time-pos'] = max(values.get('time-pos', 0), getattr(self, 'load_position', 0))
+            self.resume_after_reparent = (self.last_media, values)
+        self.command('set', 'pause', 'yes')
+
+    def release_render(self):
+        if self.context:
+            self.make_current()
+            self.render_free(self.context); self.context = P()
+
     def unrealize_video(self, *_):
-        self.make_current()
-        self.close()
+        if self.reparenting and not self.closed: self.release_render()
+        else: self.close()
 
     def close(self):
         if self.closed: return
         self.closed = True
         if self.timer: GLib.source_remove(self.timer); self.timer = None
-        if self.context:
-            self.make_current()
-            self.render_free(self.context); self.context = P()
+        self.release_render()
         if self.handle:
             self.destroy(self.handle); self.handle = None

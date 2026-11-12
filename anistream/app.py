@@ -16,6 +16,7 @@ from . import backend
 from .player import Video
 from .paths import DATA
 from .library import Library
+from .pip_window import PIP_TITLE, configure_floating
 
 DATA.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(filename=DATA / 'errors.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -35,7 +36,7 @@ def button(text, action, css=None):
 
 def icon_button(icon, title, action, css=None):
     b = Gtk.Button()
-    b.set_child(Gtk.Image.new_from_icon_name(icon))
+    b.set_child(Gtk.Image.new_from_file(str(files('anistream').joinpath('resources', icon))) if icon.endswith('.svg') else Gtk.Image.new_from_icon_name(icon))
     b.set_tooltip_text(title)
     b.update_property([Gtk.AccessibleProperty.LABEL], [title])
     b.connect('clicked', lambda *_: action())
@@ -44,7 +45,8 @@ def icon_button(icon, title, action, css=None):
 
 
 def update_icon(b, icon, title):
-    b.get_child().set_from_icon_name(icon)
+    if icon.endswith('.svg'): b.get_child().set_from_file(str(files('anistream').joinpath('resources', icon)))
+    else: b.get_child().set_from_icon_name(icon)
     b.set_tooltip_text(title)
     b.update_property([Gtk.AccessibleProperty.LABEL], [title])
 
@@ -193,6 +195,7 @@ class AniStream(Gtk.Application):
         self.work(lambda: backend.episodes(item), done, 'Cargando episodios…')
 
     def build_player(self):
+        self.pip_window = None
         self.controls_timer = None
         self.controls_dragging = False
         self.last_pointer_position = None
@@ -203,7 +206,8 @@ class AniStream(Gtk.Application):
 
         top = Gtk.Box(spacing=12)
         top.add_css_class('video-top'); top.add_css_class('video-controls')
-        top.append(icon_button('go-previous-symbolic', 'Volver a episodios (Esc)', self.leave_player))
+        self.player_back = icon_button('go-previous-symbolic', 'Volver a episodios (Esc)', self.leave_player)
+        top.append(self.player_back)
         self.video_title = label('Reproductor')
         self.video_title.set_hexpand(True); self.video_title.set_ellipsize(3)
         top.append(self.video_title)
@@ -241,11 +245,26 @@ class AniStream(Gtk.Application):
         controls.append(icon_button('view-refresh-symbolic', 'Reintentar conexión', self.retry_video))
         self.fullscreen_button = icon_button('view-fullscreen-symbolic', 'Pantalla completa (F)', self.fullscreen)
         controls.append(self.fullscreen_button)
+        self.pip_button = icon_button('pip-enter.svg', 'Picture-in-Picture: abrir ventana flotante (P)', self.toggle_pip)
+        self.pip_button.set_sensitive(False)
+        controls.append(self.pip_button)
         bottom.append(controls)
         self.bottom_controls = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.CROSSFADE, transition_duration=200)
         self.bottom_controls.set_valign(Gtk.Align.END); self.bottom_controls.set_child(bottom)
         self.player_overlay.add_overlay(self.bottom_controls)
-        self.pages.add_named(self.player_overlay, 'player')
+        self.player_host = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, vexpand=True)
+        self.player_host.append(self.player_overlay)
+        self.pip_placeholder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, vexpand=True)
+        self.pip_placeholder.append(label('Reproduciendo en Picture-in-Picture', 'subtitle'))
+        self.pip_placeholder.append(button('Volver al reproductor', self.restore_pip, 'accent'))
+        self.pip_placeholder.append(button('Explorar catálogo', self.browse_during_pip))
+        self.pip_placeholder.set_visible(False)
+        self.player_host.append(self.pip_placeholder)
+        self.pages.add_named(self.player_host, 'player')
+        # Compact PiP keeps pause, mute, time and the return-to-app button.
+        self.pip_hidden_controls = [w for w in list(controls) if w not in (self.pause, self.mute, self.clock, self.pip_button)]
+        self.pip_hidden_controls.append(self.player_back)
+
 
         motion = Gtk.EventControllerMotion()
         motion.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
@@ -260,6 +279,67 @@ class AniStream(Gtk.Application):
         keys.connect('key-pressed', self.player_key); self.win.add_controller(keys)
         self.win.connect('notify::fullscreened', self.fullscreen_changed)
         self.show_controls()
+
+    def active_player_window(self):
+        return self.pip_window or self.win
+
+    def toggle_pip(self):
+        if self.pip_window:
+            self.restore_pip()
+            return
+        if not self.current_video or self.waiting_for_video or not self.video.context: return
+        self.save_position()
+        self.win.unfullscreen()
+        pip = Gtk.ApplicationWindow(application=self, title=PIP_TITLE)
+        pip.set_transient_for(self.win)
+        pip.set_default_size(480, 300)
+        pip.set_resizable(True)
+        pip.connect('close-request', self.pip_closed)
+        keys = Gtk.EventControllerKey()
+        keys.connect('key-pressed', self.player_key); pip.add_controller(keys)
+        self.pip_window = pip
+        self.waiting_for_video = True; self.attempt_started = time.monotonic()
+        self.video.prepare_reparent()
+        self.player_host.remove(self.player_overlay)
+        self.pip_placeholder.set_visible(True)
+        for widget in self.pip_hidden_controls: widget.set_visible(False)
+        update_icon(self.pip_button, 'pip-exit.svg', 'Volver a la ventana principal (P)')
+        self.player_overlay.add_css_class('pip')
+        pip.set_child(self.player_overlay)
+        pip.present()
+        self.controls_dragging = False
+        self.show_controls(); self.video.grab_focus()
+        POOL.submit(configure_floating)
+
+    def restore_pip(self, present=True):
+        if not self.pip_window: return
+        pip = self.pip_window
+        self.save_position()
+        self.waiting_for_video = bool(self.video.playing_media)
+        self.attempt_started = time.monotonic()
+        self.video.prepare_reparent()
+        pip.set_child(None)
+        self.pip_window = None
+        self.player_host.prepend(self.player_overlay)
+        self.pip_placeholder.set_visible(False)
+        for widget in self.pip_hidden_controls: widget.set_visible(True)
+        self.player_overlay.remove_css_class('pip')
+        update_icon(self.pip_button, 'pip-enter.svg', 'Picture-in-Picture: abrir ventana flotante (P)')
+        self.pages.set_visible_child_name('player')
+        self.header.set_visible(False)
+        pip.destroy()
+        if present: self.win.present()
+        self.controls_dragging = False
+        self.show_controls(); self.video.grab_focus()
+
+    def pip_closed(self, *_):
+        self.restore_pip()
+        return True
+
+    def browse_during_pip(self):
+        self.pages.set_visible_child_name('browser')
+        self.header.set_visible(True)
+        self.search(self.entry.get_text())
 
     def controls_motion(self, controller, x, y):
         # Revealing/hiding overlays can re-pick the widget under a stationary
@@ -291,14 +371,14 @@ class AniStream(Gtk.Application):
         for bar in (self.top_controls, self.bottom_controls):
             bar.set_reveal_child(True); bar.set_can_target(True)
         self.player_overlay.set_cursor_from_name('default')
-        if self.pages.get_visible_child_name() == 'player':
+        if self.pip_window or self.pages.get_visible_child_name() == 'player':
             self.controls_timer = GLib.timeout_add(2500, self.hide_controls)
 
     def hide_controls(self):
         self.controls_timer = None
-        if self.pages.get_visible_child_name() != 'player': return False
+        if not self.pip_window and self.pages.get_visible_child_name() != 'player': return False
         # Keep controls available while dragging, keyboard-focused, or showing an error.
-        focus = self.win.get_focus()
+        focus = self.active_player_window().get_focus()
         keyboard_focus = focus and focus.has_visible_focus() and any(focus.is_ancestor(bar) for bar in (self.top_controls, self.bottom_controls))
         if self.controls_dragging or keyboard_focus or getattr(self, 'playback_error', False):
             self.controls_timer = GLib.timeout_add(1000, self.hide_controls)
@@ -314,15 +394,18 @@ class AniStream(Gtk.Application):
         if self.pages.get_visible_child_name() == 'player': self.show_controls()
 
     def fullscreen(self):
+        if self.pip_window: self.restore_pip()
         if self.win.is_fullscreen(): self.win.unfullscreen()
         else: self.win.fullscreen()
 
     def player_key(self, controller, key, code, modifiers):
-        if self.pages.get_visible_child_name() != 'player': return False
+        if controller.get_widget() is not self.pip_window and self.pages.get_visible_child_name() != 'player': return False
         self.show_controls()
         if key == Gdk.KEY_Escape:
-            if self.win.is_fullscreen(): self.win.unfullscreen()
+            if self.pip_window: self.restore_pip()
+            elif self.win.is_fullscreen(): self.win.unfullscreen()
             else: self.leave_player()
+        elif key in (Gdk.KEY_p, Gdk.KEY_P): self.toggle_pip()
         elif key in (Gdk.KEY_f, Gdk.KEY_F): self.fullscreen()
         elif key == Gdk.KEY_space: self.video.command('cycle', 'pause')
         elif key == Gdk.KEY_Left: self.video.command('seek', '-10', 'relative')
@@ -342,6 +425,7 @@ class AniStream(Gtk.Application):
     def video_changed(self, values):
         if not self.current_video: return
         pos, duration = values.get('time-pos', 0), values.get('duration', 0)
+        self.pip_button.set_sensitive(duration > 0 and not self.waiting_for_video)
         if self.waiting_for_video:
             if duration > 0 and pos > 0:
                 self.waiting_for_video = False
@@ -389,6 +473,9 @@ class AniStream(Gtk.Application):
             self.save()
 
     def leave_player(self):
+        if self.pip_window:
+            self.save_position(); self.video.stop(); self.restore_pip(present=False)
+        self.pip_button.set_sensitive(False)
         self.play_request += 1
         self.waiting_for_video = False
         self.save_position(); self.current_video = None
@@ -405,6 +492,9 @@ class AniStream(Gtk.Application):
         self.save_position()
         if self.controls_timer: GLib.source_remove(self.controls_timer); self.controls_timer = None
         self.video.close()
+        if self.pip_window:
+            self.pip_window.set_child(None)
+            self.pip_window.destroy(); self.pip_window = None
         return False
 
     def step_episode(self, delta):
@@ -416,6 +506,9 @@ class AniStream(Gtk.Application):
             if 0 <= idx < len(nums): self.play(item, nums[idx])
 
     def play(self, item, episode):
+        if self.pip_window:
+            self.save_position(); self.video.stop(); self.restore_pip()
+        self.pip_button.set_sensitive(False)
         self.save_position()
         self.play_request += 1; request = self.play_request
         self.waiting_for_video = False

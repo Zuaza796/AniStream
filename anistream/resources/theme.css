@@ -25,3 +25,7 @@ flowboxchild { padding: 7px; }
 .video-controls scale trough { background: rgba(255,255,255,0.25); }
 .video-controls scale highlight { background: #a58bff; }
 .video-controls scale slider { background: white; }
+.pip .video-top { padding: 4px 8px 16px; }
+.pip .video-bottom { padding: 16px 8px 4px; }
+.pip .video-controls button { padding: 6px; }
+.pip .video-controls .status { font-size: 11px; }
