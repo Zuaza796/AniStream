@@ -29,3 +29,6 @@ flowboxchild { padding: 7px; }
 .pip .video-bottom { padding: 16px 8px 4px; }
 .pip .video-controls button { padding: 6px; }
 .pip .video-controls .status { font-size: 11px; }
+.section-title { font-size: 22px; font-weight: 800; margin-top: 12px; margin-bottom: 8px; }
+progressbar progress { background: #a58bff; min-height: 4px; }
+progressbar trough { background: #30384d; min-height: 4px; }

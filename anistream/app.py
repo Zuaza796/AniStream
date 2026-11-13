@@ -15,7 +15,7 @@ from gi.repository import Gtk, Gdk, GLib
 from . import backend
 from .player import Video
 from .paths import DATA
-from .library import Library
+from .library import Library, series_metadata, record_progress, unfinished, history_items, continue_items
 from .pip_window import PIP_TITLE, configure_floating
 
 DATA.mkdir(parents=True, exist_ok=True)
@@ -54,8 +54,10 @@ def update_icon(b, icon, title):
 class AniStream(Gtk.Application):
     def __init__(self):
         super().__init__(application_id='io.github.Zuaza796.AniStream')
-        self.library = Library(DATA / 'library.json')
-        self.state = self.library.load()
+        self.library_store = Library(DATA / 'library.json')
+        self.state = self.library_store.load()
+        self.current_view = 'home'
+        self.home_catalog = None
         self.generation = 0
         self.play_request = 0
         self.current_video = None
@@ -65,13 +67,14 @@ class AniStream(Gtk.Application):
         self.connect('activate', self.activate)
 
     def save(self):
-        self.library.save(self.state)
+        self.library_store.save(self.state)
 
-    def work(self, job, done, message='Cargando…'):
+    def work(self, job, done, message='Cargando…', generation=None):
         self.status.set_text(message)
         future = POOL.submit(job)
         def finish(f):
             def update():
+                if generation is not None and generation != self.generation: return False
                 try:
                     result = f.result()
                     done(result)
@@ -100,12 +103,13 @@ class AniStream(Gtk.Application):
         self.build_player()
         self.win.connect('close-request', self.close_player)
         nav = Gtk.Box(spacing=10)
-        nav.append(button('Explorar', lambda: self.search('')))
-        nav.append(button('♡  Mi lista', lambda: self.library('favorites')))
-        nav.append(button('↺  Historial', lambda: self.library('history')))
+        self.nav_buttons = {}
+        for key, text, action in [('home', 'Inicio', self.home), ('favorites', '♡  Mi lista', lambda: self.show_library('favorites')), ('history', '↺  Historial', lambda: self.show_library('history'))]:
+            self.nav_buttons[key] = button(text, action)
+            nav.append(self.nav_buttons[key])
         nav.append(button('anicli-esp ↗', self.terminal))
         root.append(nav)
-        hero = label('Tu próximo anime empieza aquí.', 'hero'); hero.set_wrap(True); root.append(hero)
+        self.hero = label('Tu próximo anime empieza aquí.', 'hero'); self.hero.set_wrap(True); root.append(self.hero)
         root.append(label('Explora, guarda tus series y disfruta aquí mismo.  •  AnimeAv1 / anicli-esp', 'subtitle'))
         row = Gtk.Box(spacing=10)
         self.entry = Gtk.Entry(placeholder_text='Buscar anime… Naruto, One Piece, Frieren', hexpand=True)
@@ -119,44 +123,143 @@ class AniStream(Gtk.Application):
     def clear(self):
         while self.content.get_first_child(): self.content.remove(self.content.get_first_child())
 
-    def grid(self):
+    def grid(self, parent=None):
         grid = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True, max_children_per_line=6, min_children_per_line=1)
-        self.content.append(grid); return grid
+        (parent or self.content).append(grid)
+        return grid
+
+    def set_view(self, name, title):
+        self.current_view = name
+        self.hero.set_text(title)
+        for key, b in self.nav_buttons.items():
+            if key == name: b.add_css_class('accent')
+            else: b.remove_css_class('accent')
+
+    def home(self, refresh_catalog=True):
+        self.save_position()
+        self.generation += 1; generation = self.generation
+        self.set_view('home', 'Tu próximo anime empieza aquí.')
+        self.clear()
+        self.content.append(label('Continuar viendo', 'section-title'))
+        self.continue_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.content.append(self.continue_section)
+        self.render_continue()
+        self.content.append(label('Explorar anime', 'section-title'))
+        catalog_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.content.append(catalog_section)
+        if self.home_catalog is not None:
+            self.render_cards(self.home_catalog, catalog_section)
+            self.status.set_text(f'{len(self.home_catalog)} series para explorar')
+            if not refresh_catalog: return
+        def done(items):
+            self.home_catalog = items
+            while catalog_section.get_first_child(): catalog_section.remove(catalog_section.get_first_child())
+            self.render_cards(items, catalog_section)
+            self.status.set_text(f'{len(items)} series para explorar' if items else 'El catálogo no devolvió resultados. Puedes usar tu biblioteca o buscar un título.')
+        self.work(lambda: backend.catalog(''), done, 'Cargando catálogo…', generation=generation)
+
+    def render_continue(self):
+        while self.continue_section.get_first_child(): self.continue_section.remove(self.continue_section.get_first_child())
+        items = continue_items(self.state)
+        if not items:
+            message = label('Aquí aparecerán los episodios que dejes a medias para retomarlos.', 'subtitle')
+            message.set_wrap(True); self.continue_section.append(message)
+            return
+        row = Gtk.Box(spacing=12, valign=Gtk.Align.START)
+        for item in items:
+            card = self.make_card(item, self.resume_item, 'continue')
+            card.set_size_request(190, -1); row.append(card)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC, vscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroll.set_propagate_natural_height(True); scroll.set_child(row)
+        self.continue_section.append(scroll)
 
     def search(self, query):
+        query = query.strip()
+        if not query:
+            self.home()
+            return
         self.generation += 1; generation = self.generation
+        self.set_view('search', f'Resultados para «{query}»')
         self.clear()
         def done(items):
-            if generation != self.generation: return
             self.cards(items)
-        self.work(lambda: backend.catalog(query), done, 'Buscando en AnimeAv1…')
+        self.work(lambda: backend.catalog(query), done, 'Buscando en AnimeAv1…', generation=generation)
 
-    def library(self, kind):
-        self.generation += 1; self.clear()
-        items = list(self.state[kind].values())
-        self.cards(list(reversed(items)))
+    def show_library(self, kind):
+        self.save_position()
+        self.generation += 1
+        title = 'Mi lista' if kind == 'favorites' else 'Historial'
+        self.set_view(kind, title)
+        self.clear()
+        items = list(reversed(list(self.state['favorites'].values()))) if kind == 'favorites' else history_items(self.state)
+        if not items:
+            self.status.set_text('Aún no tienes animes en tu lista.' if kind == 'favorites' else 'Aún no has reproducido episodios.')
+            message = label('Añade favoritos con el corazón en la ficha de un anime.' if kind == 'favorites' else 'Los episodios aparecerán aquí cuando empieces a verlos.', 'subtitle')
+            message.set_wrap(True); self.content.append(message)
+            return
+        self.status.set_text(f'{len(items)} animes · {title}')
+        self.render_cards(items, self.content, kind=kind)
 
     def cards(self, items):
-        self.clear(); self.status.set_text(f'{len(items)} series' if items else 'No hay series aquí. Busca un título o añade favoritos.')
-        grid = self.grid()
+        self.clear()
+        self.status.set_text(f'{len(items)} series' if items else 'No hay resultados para esta búsqueda.')
+        self.render_cards(items, self.content)
+
+    def render_cards(self, items, parent, kind='catalog'):
+        grid = self.grid(parent)
         for item in items:
-            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-            picture = Gtk.Picture(); picture.set_size_request(155, 220); picture.set_content_fit(Gtk.ContentFit.COVER)
-            frame = Gtk.AspectFrame(ratio=300 / 425, obey_child=False)
-            frame.set_child(picture); card.append(frame)
-            title = label(item['title']); title.set_wrap(True); title.set_max_width_chars(23); card.append(title)
-            if 'episode' in item: card.append(label(f"Último abierto: episodio {item['episode']}", 'subtitle'))
-            b = Gtk.Button(); b.add_css_class('card'); b.set_child(card)
-            b.connect('clicked', lambda _, i=item: self.detail(i)); grid.append(b)
-            if item.get('image'):
-                future = POOL.submit(self.image, item['image'])
-                def loaded(f, pic=picture):
-                    def apply():
-                        try: pic.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(f.result())))
-                        except Exception: pass
-                        return False
-                    GLib.idle_add(apply)
-                future.add_done_callback(loaded)
+            grid.append(self.make_card(item, self.detail, kind))
+
+    def make_card(self, item, selected, kind='catalog'):
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.START)
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        picture = Gtk.Picture(); picture.set_size_request(155, 220); picture.set_content_fit(Gtk.ContentFit.COVER)
+        frame = Gtk.AspectFrame(ratio=300 / 425, obey_child=False)
+        frame.set_child(picture); card.append(frame)
+        title = label(item['title']); title.set_wrap(True); title.set_max_width_chars(23); card.append(title)
+        if 'episode' in item:
+            pos = item.get('_resume_position', 0); duration = item.get('_resume_duration', 0)
+            caption = f"Episodio {item['episode']}"
+            if pos > 0:
+                caption += ' · ' + self.timestamp(pos)
+                if duration > 0: caption += ' / ' + self.timestamp(duration)
+            meta = label(caption, 'subtitle'); meta.set_wrap(True); card.append(meta)
+            if duration > 0:
+                progress = Gtk.ProgressBar(fraction=min(1, max(0, pos / duration)))
+                card.append(progress)
+        b = Gtk.Button(); b.add_css_class('card'); b.set_child(card)
+        b.connect('clicked', lambda *_: selected(item)); outer.append(b)
+        if kind == 'continue':
+            outer.append(button(f"▶ Continuar ep. {item['episode']}", lambda: self.resume_item(item), 'accent'))
+            outer.append(button('Ver episodios', lambda: self.detail(item)))
+        elif kind == 'history' and unfinished(item):
+            outer.append(button(f"▶ Continuar ep. {item['episode']}", lambda: self.resume_item(item), 'accent'))
+        elif kind == 'favorites':
+            def remove():
+                self.state['favorites'].pop(item['path'], None)
+                self.save(); self.show_library('favorites')
+            outer.append(button('♡ Quitar de mi lista', remove))
+        if item.get('image'):
+            future = POOL.submit(self.image, item['image'])
+            def loaded(f):
+                def apply():
+                    try: picture.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(f.result())))
+                    except Exception: pass
+                    return False
+                GLib.idle_add(apply)
+            future.add_done_callback(loaded)
+        return outer
+
+    def resume_item(self, item):
+        self.generation += 1; generation = self.generation
+        def done(nums):
+            if item['episode'] not in nums:
+                self.status.set_text('Ese episodio ya no está disponible. Abre la ficha para elegir otro.')
+                return
+            self.current_episodes = nums
+            self.play(series_metadata(item), item['episode'])
+        self.work(lambda: backend.episodes(item), done,
+            f"Preparando {item['title']} · episodio {item['episode']}…", generation=generation)
 
     @staticmethod
     def image(url):
@@ -166,6 +269,7 @@ class AniStream(Gtk.Application):
         data = backend.fetch(url); path.write_bytes(data); return data
 
     def detail(self, item):
+        self.set_view('detail', item['title'])
         self.generation += 1; generation = self.generation
         self.clear(); self.content.append(button('← Volver', lambda: self.search(self.entry.get_text())))
         title = label(item['title'], 'hero'); title.set_wrap(True); self.content.append(title)
@@ -174,7 +278,7 @@ class AniStream(Gtk.Application):
         def favorite(*_):
             key = item['path']
             if key in self.state['favorites']: del self.state['favorites'][key]
-            else: self.state['favorites'][key] = item
+            else: self.state['favorites'][key] = series_metadata(item)
             self.save(); refresh()
         def refresh(): fav.set_label('♥  Quitar de mi lista' if item['path'] in self.state['favorites'] else '♡  Añadir a mi lista')
         fav.connect('clicked', favorite); refresh(); self.content.append(fav)
@@ -192,7 +296,7 @@ class AniStream(Gtk.Application):
             row = Gtk.Box(spacing=10); row.append(self.episode)
             row.append(button('Abrir episodio en navegador ↗', lambda: Gtk.show_uri(self.win, backend.BASE + item['path'] + '/' + str(self.episode.get_value_as_int()), 0)))
             self.content.append(row)
-        self.work(lambda: backend.episodes(item), done, 'Cargando episodios…')
+        self.work(lambda: backend.episodes(item), done, 'Cargando episodios…', generation=generation)
 
     def build_player(self):
         self.pip_window = None
@@ -465,10 +569,8 @@ class AniStream(Gtk.Application):
         if not self.current_video: return
         item, episode = self.current_video
         pos = self.video.values.get('time-pos', 0)
-        if pos > 0:
-            self.state.setdefault('positions', {}).setdefault(item['path'], {})[str(episode)] = pos
-            duration = self.video.values.get('duration', 0)
-            if duration: self.state.setdefault('durations', {}).setdefault(item['path'], {})[str(episode)] = duration
+        duration = self.video.values.get('duration', 0)
+        if record_progress(self.state, item, episode, pos, duration):
             self.last_saved_second = int(pos)
             self.save()
 
@@ -485,6 +587,8 @@ class AniStream(Gtk.Application):
         if self.controls_timer: GLib.source_remove(self.controls_timer); self.controls_timer = None
         self.player_overlay.set_cursor_from_name('default')
         self.video.values.update({'time-pos': 0., 'duration': 0.})
+        if self.current_view == 'home': self.home(refresh_catalog=False)
+        elif self.current_view in ('favorites', 'history'): self.show_library(self.current_view)
 
     def close_player(self, *_):
         self.play_request += 1
@@ -568,9 +672,6 @@ class AniStream(Gtk.Application):
         def ready(media):
             if attempt != self.attempt_id: return
             self.current_video = (item, episode)
-            self.state['history'].pop(item['path'], None)
-            self.state['history'][item['path']] = dict(item, episode=episode)
-            self.save()
             nums = getattr(self, 'current_episodes', [])
             if episode in nums:
                 self.previous.set_sensitive(nums.index(episode) > 0)

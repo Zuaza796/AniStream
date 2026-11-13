@@ -3,7 +3,8 @@
 Reproductor de anime para **Linux**, con interfaz en español y vídeo integrado en la misma ventana. Construido con Python, GTK 4 y libmpv, a partir del proveedor AnimeAv1 de [anicli-esp](https://github.com/Asempere123123/anicli-esp).
 
 - Búsqueda con portadas, sinopsis y selección de episodios.
-- Favoritos, historial y continuación desde la posición guardada.
+- Mi lista e historial con acceso a las fichas y favoritos guardados.
+- Sección «Continuar viendo» en el inicio, con progreso y acceso directo al episodio guardado.
 - Controles con iconos superpuestos al vídeo que se ocultan tras 2,5 segundos de inactividad.
 - Pausa, avance, volumen, silencio, pantalla completa y cambio de episodio.
 - Picture-in-Picture: vídeo en ventana flotante pequeña, con retorno a la app.
@@ -41,7 +42,7 @@ Abre AniStream desde el menú, busca una serie, entra en su ficha y selecciona u
 
 El icono de una pantalla con un recuadro pequeño abre Picture-in-Picture. Conserva la posición, la pausa y el volumen; pulsa de nuevo el icono o cierra la ventana flotante para regresar. En Hyprland queda flotante y fijada entre espacios de trabajo. En otros escritorios el orden sobre otras aplicaciones depende del gestor de ventanas.
 
-«Mi lista» guarda favoritos. «Historial» registra el último episodio abierto, no si se terminó de ver. Si falla una conexión, usa el icono de reintento. La ficha también permite abrir el episodio en el navegador.
+«Mi lista» guarda favoritos. «Historial» registra el último episodio reproducido de cada anime. «Continuar viendo» muestra los episodios empezados que no están prácticamente terminados, ordenados por la reproducción más reciente. Cada tarjeta permite retomar el episodio o abrir su ficha. Si falla una conexión, usa el icono de reintento. La ficha también permite abrir el episodio en el navegador.
 
 ## Arquitectura
 

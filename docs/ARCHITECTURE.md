@@ -103,3 +103,13 @@ La vista del reproductor se mueve entre la ventana principal y una `Gtk.Applicat
 GTK recrea el contexto OpenGL al cambiar de ventana. Durante esa transferencia `player.py` mantiene vivo el mismo núcleo libmpv, libera solo el contexto de renderizado y conserva URL en memoria, posición, pausa, silencio y volumen. Al realizar el área en su nueva ventana crea otro contexto y recarga la fuente desde la posición guardada. Puede haber una breve recarga, especialmente en streaming; no se crea un segundo reproductor ni se duplica el audio.
 
 `pip_window.py` configura únicamente la ventana del propio PID y título PiP. En Hyprland aplica flotación, tamaño 480×300, ubicación inferior derecha, fijación entre espacios y elevación; admite dispatchers clásicos y Lua. No modifica archivos de configuración ni reglas persistentes. Para otros gestores se utiliza la relación transitoria de GTK: mantenerse sobre aplicaciones ajenas depende del compositor.
+
+## Biblioteca e inicio
+
+`app.py` mantiene el objeto de persistencia como `library_store` y la navegación como `show_library`, evitando que un atributo oculte el método de interfaz. `generation` invalida tanto resultados como errores de búsquedas anteriores al cambiar de sección.
+
+`library.py` deriva las tarjetas de continuación de `history`, `positions` y `durations`, sin crear otra biblioteca ni cambiar las claves de las instalaciones anteriores. `record_progress` añade el episodio al historial únicamente tras recibir una posición positiva de reproducción; no se registra un simple intento de resolver una fuente. El historial conserva un anime por ruta y el último episodio reproducido, con `watched_at` opcional. El orden de inserción mantiene la compatibilidad con registros antiguos sin fecha.
+
+El inicio dibuja primero las tarjetas locales de «Continuar viendo» y después carga el catálogo. Solo aparecen episodios con posición positiva y, si se conoce su duración, con menos del 95 % visto y más de tres segundos restantes. Los terminados permanecen en Historial. No se buscan episodios anteriores de una serie cuyo último episodio ya terminó.
+
+Las tarjetas de continuación muestran episodio, posición y progreso, y recuperan la lista de episodios antes de reproducir para que «Anterior» y «Siguiente» correspondan a esa serie. Los favoritos guardan solo metadatos de la serie; los campos transitorios de las tarjetas no se escriben allí. Volver al inicio o salir de reproducción actualiza la sección local.

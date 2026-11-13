@@ -53,3 +53,13 @@ python3 tests/smoke_pip.py /tmp/anistream-pip.mp4
 ```
 
 Comprueba cambios repetidos de ventana, mismo núcleo mpv, posición y pausa conservadas, cierre de PiP y navegación del catálogo. En Hyprland verifica también flotación y fijación. Es una prueba gráfica opcional; las pruebas unitarias de `test_pip.py` no requieren pantalla ni cambios reales en el compositor.
+
+## Biblioteca y Continuar viendo
+
+`test_continue_watching.py` comprueba compatibilidad con bibliotecas antiguas, orden de reproducción, filtros de episodios terminados y conservación de metadatos. La prueba gráfica, con un clip local de al menos 60 segundos, recorre los botones reales de navegación, una respuesta de catálogo tardía, la continuación del episodio correcto y la persistencia de favoritos:
+
+```bash
+python3 tests/smoke_library.py /tmp/anistream-pip.mp4
+```
+
+La red se sustituye por datos de prueba dentro de ese proceso; la biblioteca se guarda en un directorio temporal independiente.
