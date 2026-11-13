@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>AniStreamFresa</AssemblyName><ApplicationIcon>Assets/fresa.ico</ApplicationIcon>
+    <Version>0.1.0</Version><PublishSingleFile>true</PublishSingleFile><SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract><PublishTrimmed>false</PublishTrimmed><EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType><VlcWindowsX64Enabled>false</VlcWindowsX64Enabled><VlcWindowsX86Enabled>false</VlcWindowsX86Enabled><VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AniStream.Core/AniStream.Core.csproj" />
+    <PackageReference Include="LibVLCSharp.WinForms" Version="3.10.2" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" GeneratePathProperty="true" />
+    <None Update="Assets/fresa.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(PkgVideoLAN_LibVLC_Windows)/build/x64/**/*" Exclude="$(PkgVideoLAN_LibVLC_Windows)/build/x64/**/*.lib;$(PkgVideoLAN_LibVLC_Windows)/build/x64/include/**">
+      <Link>libvlc/win-x64/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+</Project>

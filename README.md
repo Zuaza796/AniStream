@@ -12,6 +12,10 @@ Reproductor de anime para **Linux**, con interfaz en español y vídeo integrado
 
 La disponibilidad, el audio y los subtítulos dependen de cada título y del proveedor. AniStream no aloja ni distribuye vídeos. El binario original de anicli-esp es opcional.
 
+## Edición para Windows: AniStream Fresa
+
+Hay una [edición independiente para Windows](windows/README.md), con frontend nativo rosa pastel, botones con forma de fresa, icono pixel art, reproducción integrada y PiP. El instalador y el ZIP portable se distribuyen en [Releases](https://github.com/Zuaza796/AniStream/releases). Es una versión preliminar para Windows x64: compilación y pruebas del núcleo verificadas en Linux; validación de interfaz en Windows pendiente.
+
 ## Instalación rápida
 
 Descarga el [ZIP del proyecto](https://github.com/Zuaza796/AniStream/archive/refs/heads/main.zip), extráelo y ejecuta `./install.sh` desde su carpeta. También puedes usar Git:

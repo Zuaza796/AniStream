@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>AniStreamFresa-Setup</AssemblyName><ApplicationIcon>../AniStream.Fresa/Assets/fresa.ico</ApplicationIcon>
+    <Version>0.1.0</Version><PublishSingleFile>true</PublishSingleFile><SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract><PublishTrimmed>false</PublishTrimmed><EnableCompressionInSingleFile>true</EnableCompressionInSingleFile><DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../AniStream.Fresa/StrawberryButton.cs" Link="StrawberryButton.cs" />
+    <EmbeddedResource Include="$(PayloadZip)" LogicalName="AniStream.Payload.zip" />
+  </ItemGroup>
+</Project>

@@ -16,3 +16,11 @@ library.json*
 .library-*
 # Local upstream reference, not part of the application distribution.
 vendor/
+# Windows edition: reproducible sources stay in Git; binaries are release assets.
+windows/**/bin/
+windows/**/obj/
+windows/artifacts/
+# This directory contains hand-written Windows packaging scripts, not Python build output.
+!windows/build/
+!windows/build/*.py
+!windows/build/*.ps1
